@@ -1,0 +1,278 @@
+usage()
+{
+    echo "Usage: $0: [-v 18|20] [-t <m|p>] [-n <name>] [-p <1|0>] [-s <server>] [-u <dbuser> ] [-w <dbpass>] [-d <1|0>] [-h] [--] [script options]"
+    echo "Options:"
+    echo -e "\t-v\t\tversion (18 for 1.8 and 20 for 2.0)"
+    echo -e "\t-t\t\tdatabase type (m for mysql and p for postgresql)"
+    echo -e "\t-n\t\tspecify database name"
+    echo -e "\t-p\t\tenable proxy (1 - yes, 0 - no)"
+    echo -e "\t-s <server>\tspecify db server host"
+    echo -e "\t-u <dbuser>\tspecify db user"
+    echo -e "\t-w <dbpass>\tspecify db password"
+    echo -e "\t-c <directory>\tspecify configuration files directory (default: /etc/zabbix)"
+    echo -e "\t-l <directory>\tspecify log and pid files directory (default: /tmp)"
+    echo -e "\t-d\t\tenable debug (1 - yes, 0 - no)"
+    echo -e "\t-h, --help\tthis help message"
+    if type additional_usage &>/dev/null; then
+	additional_usage
+    fi
+    if type script_usage &>/dev/null; then
+	echo "Script options:"
+	script_usage
+    fi
+    exit 1
+}
+
+dbg()
+{
+    [ "$O_DEBUG" = "1" ] || return
+    echo "DBG: $*"
+}
+
+msg()
+{
+    echo "MSG: $*"
+}
+
+err()
+{
+    echo "ERR: $*"
+    exit 1
+}
+
+eval_defaults()
+{
+    n=0
+    dbg "script: $0"
+    while [ $n -lt ${#defaults[*]} ]; do
+	o=${defaults[$n]}
+	((n+=2))
+	v=$(/bin/grep "$o=" $ZBX_DEFAULTS | sed "s|^$o=\([^[:space:]]*\).*$|\1|")
+	eval export $o=$v
+	dbg "$o=$v"
+    done
+}
+
+write_defaults()
+{
+    n=0
+    while [ $n -lt ${#defaults[*]} ]; do
+	o=${defaults[$n]}
+	((n++))
+	v=${defaults[$n]}
+	((n++))
+	/bin/grep -q "$o=" $ZBX_DEFAULTS 2>/dev/null || write_default $o $v
+    done
+}
+
+write_default()
+{
+    o=$1
+    v=$2
+
+    # return if already set
+    /bin/grep -q "^$o=$v$" $ZBX_DEFAULTS 2>/dev/null && return
+
+    # add entry if missing
+    if ! /bin/grep -q "^$o=" $ZBX_DEFAULTS 2>/dev/null; then
+	echo $o=$v >> $ZBX_DEFAULTS
+	return;
+    fi
+
+    # replace otherwise
+    sed -i "s|^$o=.*|$o=$v|" $ZBX_DEFAULTS
+}
+
+recompile()
+{
+    msg "cleaning up"
+    make clean > /dev/null
+    msg "running conf.sh $O_ARGS"
+    conf.sh $O_ARGS >/dev/null || exit
+    msg "running make dbschema"
+    make dbschema >/dev/null || exit
+    msg "running make -j2 install >/dev/null"
+    make -j2 install >/dev/null || exit
+}
+
+exec_sql()
+{
+    db_name="$1"
+    shift
+    cmd="$1"
+    shift
+
+    CMD=
+
+    if [ "p" = "$O_DB" ]; then
+	CMD="psql -v ON_ERROR_STOP=1 -q -U $O_DBUSER"
+    elif [ "m" = "$O_DB" ]; then
+	CMD="mysql -u $O_DBUSER"
+    else
+	echo unsupported db type: $O_DB
+	exit
+    fi
+
+    CMD="$CMD -h $DBHost"
+
+    msg="[$DB_TYPE:$O_DBUSER@$O_DBHOST"
+    [ -n "$db_name" ] && msg="$msg:$db_name"
+    msg="$msg] $cmd"
+
+    echo $msg
+
+    $CMD "$@"
+}
+
+ZBX_RETVAL=
+fix_db_name()
+{
+    ZBX_RETVAL=$(echo $1 | tr -- -. _ | tr [A-Z] [a-z])
+}
+
+defaults=(
+    O_DEBUG		0		# debug enabled (NB! THIS ENTRY SHOULD BE FIRST)
+    O_VER		20		# Zabbix version (2.0)
+    O_DB		m		# DB type (MySQL)
+    O_DBUSER		root		# DB user
+    O_DBPASS		""		# DB password
+    O_DBHOST		localhost	# DB host
+    O_DBNAME		""		# DB name
+    O_PRX_DBNAME	""		# proxy DB name
+    O_PRX		0		# proxy enabled
+    O_ZCONFDIR		"/etc/zabbix"	# configuration files directory
+    O_ZLOGDIR		"/tmp"		# log and pid files directory
+)
+
+# remember initial command-line args
+O_ARGS="$*"
+
+# file with defaults
+ZBX_DEFAULTS="$(dirname $0)/.zbx-defaults"
+
+DB_PREFIX=dimir
+fix_db_name $(basename $(pwd))
+DB_POSTFIX=$ZBX_RETVAL
+
+EMAIL=vladimir.levijev@zabbix.com
+
+write_defaults
+
+stop=0
+while [ -n "$1" ]; do
+    case "$1" in
+        -v)
+            shift
+	    case $1 in
+		"18"|"20")
+		    write_default O_VER $1
+		    ;;
+		*)
+		    usage
+		    ;;
+	    esac
+            ;;
+        -t)
+            shift
+	    case $1 in
+		"p"|"m")
+		    write_default O_DB $1
+		    ;;
+		*)
+		    err "currently supported only m (MySQL) and p (PostgreSQL) DB types"
+		    ;;
+	    esac
+            ;;
+        -n)
+            shift
+	    fix_db_name $1
+	    write_default O_DBNAME $ZBX_RETVAL
+            ;;
+        -p)
+	    shift
+	    p=
+	    if [ "$1" = "1" ]; then
+		p=1
+	    elif [ "$1" = "0" ]; then
+		p=0
+	    else
+		err "option -p requires parameter"
+	    fi
+	    write_default O_PRX $p
+            ;;
+        -s)
+            shift
+	    write_default O_DBHOST $1
+	    ;;
+        -u)
+            shift
+	    write_default O_DBUSER $1
+	    ;;
+        -w)
+            shift
+	    write_default O_DBPASS $1
+	    ;;
+        -c)
+            shift
+	    [ -z "$1" -o ! -d "$1" ] && err "invalid configuration files directory specified"
+	    write_default O_ZCONFDIR $1
+            ;;
+        -l)
+            shift
+	    [ -z "$1" -o ! -d "$1" ] && err "invalid log and pid files directory specified"
+	    write_default O_ZLOGDIR $1
+	    ;;
+        -d)
+	    shift
+	    d=0
+	    [ -n "$1" -a "$1" != "0" ] && d=1
+	    write_default O_DEBUG $d
+            ;;
+        --)
+	    shift
+	    # stop parsing args
+	    break
+	    ;;
+        -*)
+            usage
+            ;;
+        *)
+	    stop=1
+            break
+            ;;
+    esac
+    [ $stop -eq 1 ] && break
+    shift
+done
+
+eval_defaults
+
+DBHost=$O_DBHOST
+
+DBName=
+if [ -n "$O_DBNAME" ]; then
+    DBName=$O_DBNAME
+else
+    DBName=${DB_PREFIX}_$DB_POSTFIX
+fi
+
+write_default O_DBNAME $DBName
+
+PRX_DBName=
+if [ $O_PRX -eq 1 ]; then
+    PRX_DBName=${DBName}_prx
+fi
+
+write_default O_PRX_DBNAME $PRX_DBName
+
+DBUser=$O_DBUSER
+DBPassword=$O_DBPASS
+DB_TYPE=
+if [ $O_DB = "m" ]; then
+    DB_TYPE=mysql
+elif [ $O_DB = "p" ]; then
+    DB_TYPE=postgresql
+else
+    err "unsupported db type: $O_DB"
+    exit 1
+fi

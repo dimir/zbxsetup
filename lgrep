@@ -1,0 +1,100 @@
+#!/bin/bash
+
+DEBUG=0
+PADDING=12
+
+dbg()
+{
+    [ $DEBUG -eq 1 ] && echo $*
+}
+
+die()
+{
+    echo -e $*
+    exit 1
+}
+
+usage()
+{
+    [ -n "$1" ] && echo $1
+    die "usage: $0 <egrep opts> <zabbix logfile>\n\tegrep opts - must include grep pattern"
+}
+
+PROCS=(
+    "active checks"         "activechk"
+    "alerter"                 "alerter"
+    "collector"             "collector"
+    "configuration syncer"  "cfgsyncer"
+    "data sender"           "datasendr"
+    "db watchdog"           "dbwatcher"
+    "discoverer"             "discover"
+    "escalator"             "escalator"
+    "heartbeat sender"      "hrtsender"
+    "history syncer"        "histsyncr"
+    "housekeeper"           "houskeepr"
+    "http poller"           "httpoller"
+    "ipmi poller"           "ipmipollr"
+    "icmp pinger"           "icmpinger"
+    "java poller"           "javapollr"
+    "listener"               "listener"
+    "main process"           "mainproc"
+    "node watcher"          "nodewtchr"
+    "poller"                   "poller"
+    "proxy poller"          "prxpoller"
+    "snmp trapper"          "snmptrapr"
+    "self-monitoring"         "selfmon"
+    "timer"                     "timer"
+    "trapper"                 "trapper"
+    "unreachable poller"    "unrpoller"
+)
+
+[ $# -lt 2 ] && usage
+
+# get last cmd-line parameter
+for LOGF; do :; done
+
+TMPF="/tmp/lgrep.tmp"
+
+[ -n "$LOGF" ] || usage
+[ -f $LOGF ] || usage  "log file $LOGF not found"
+
+replace_ptrn=
+egrep --color=none ' (server|proxy|agent) #[0-9]+ started \[[-a-z0-9 #]+\]$' $LOGF | while read line; do
+    input=$line
+    procpid=$(echo $input | awk -F: '{print $1}')
+    input=$(echo $input | sed 's/.*\[\(.*\)\]$/\1/')
+    procname=$(echo $input | awk -F# '{print $1}' | sed 's/^\s*\(.*\S\)\s*$/\1/')
+    procnum=$(echo $input | awk -F# '{print $2}' | sed 's/^\s*\(.*\S\)\s*$/\1/')
+
+    dbg "line='$line' procpid='$procpid' procname='$procname' procnum='$procnum'"
+
+    n=0
+    while [ $n -lt ${#PROCS[*]} ]; do
+	fullname=${PROCS[$n]}
+	((n++))
+	shortname=${PROCS[$n]}
+	((n++))
+	if [ "$procname" = "$fullname" ]; then
+	    dbg "  (from log) $procname == $fullname (predefined)"
+	    [ -n "$replace_ptrn" ] && replace_ptrn="${replace_ptrn};"
+	    repl="$shortname"
+	    [ -n "$procnum" ] && repl="${repl}#${procnum}"
+	    let pads=$PADDING-${#repl}
+	    while [ $pads -gt 0 ]; do ((pads--)); repl=" ${repl}"; done
+	    replace_ptrn="${replace_ptrn}s/${procpid}/${repl}/"
+	    dbg "  replace_ptrn=$replace_ptrn"
+	else
+	    dbg "  (from log) $procname != $fullname (predefined)"
+	fi
+    done
+    echo "$replace_ptrn" > $TMPF
+done
+
+[ -f $TMPF ] || die "no 'started [process]' messages in a log file"
+
+replace_ptrn=$(cat $TMPF)
+rm -f $TMPF
+
+[ "" != "$replace_ptrn" ] || die "no 'started [process]' messages in a log file"
+
+egrep "$@" | sed "$replace_ptrn"

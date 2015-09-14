@@ -1,0 +1,42 @@
+#!/bin/bash
+#
+# Example SVN_EDITOR script
+#
+
+if [ $# -ne 1 ]; then
+    echo "usage: $0 file"
+    exit 1
+fi
+
+file=$1
+
+ed=$EDITOR
+[ -z $ed ] && ed=emacs
+
+if [[ $file =~ 'svn-commit' ]]; then
+    branch=${SVN_LAST_PWD##*/}
+
+    cat <<ENDTEMPLATE >$file.$$
+ADFGIJLPST
+.......... [$branch] 
+ENDTEMPLATE
+else
+    >$file.$$
+fi
+
+cat $file >> $file.$$
+
+sum=`cksum $file.$$`
+if $ed $file.$$; then
+    newsum=`cksum $file.$$`
+    if [ "$newsum" != "$sum" ]; then
+        rm -f $file
+        mv $file.$$ $file
+    else
+        # no changes
+        rm -f $file.$$
+    fi
+else
+    echo "Error: \"$ed $file.$$\" failed"
+    exit 1
+fi
