@@ -13,6 +13,7 @@ script_usage()
     echo -e "\t-n\t\tdo not setup database"
     echo -e "\t-c\t\tcontinue, jump to setting up the database"
     echo -e "\t-a\t\tadditional options to configure script (e. g. -a \"--enable-ipv6 --with-libxml2\")"
+    echo -e "\t-x\t\tpass \"-x\" to db-setup.sh, to skip extra db modifications"
 }
 
 spinner()
@@ -58,13 +59,14 @@ fi
 
 . .zbx
 
-SETUP_DB=1
+DB_SETUP=1
+DB_SETUP_OPTS=
 CONTIN=0
 
 while [ -n "$1" ]; do
 	case "$1" in
 		-n)
-			SETUP_DB=0
+			DB_SETUP=0
 			;;
 		-c)
 			CONTIN=1
@@ -72,6 +74,9 @@ while [ -n "$1" ]; do
 		-a)
 			shift
 			ADDOPTS="$1"
+			;;
+		-x)
+			DB_SETUP_OPTS="-- -x"
 			;;
 		*)
 			echo "$1: unknown option"
@@ -87,13 +92,13 @@ echo -n "$msg "
 spinner
 
 if [ $CONTIN -eq 0 ]; then
-	[ -f configure ] || ./bootstrap.sh
+	[ -f configure ] || ./bootstrap.sh || die
 	conf.sh $opts -- $ADDOPTS || die
 	cnf-setup.sh || die
 	make -j2 dbschema || die
 fi
-if [ $SETUP_DB -eq 1 ]; then
-    db-setup.sh || die
+if [ $DB_SETUP -eq 1 ]; then
+	db-setup.sh $DB_SETUP_OPTS || die
 fi
 make -j2 install > /dev/null || die
 echo OK

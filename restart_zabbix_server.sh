@@ -62,18 +62,6 @@ if [ $opt_start_server -eq 1 ]; then
     [ $rv -eq 0 ] && pgrep -u $USER -l zabbix_server >/dev/null && msg "Zabbix Server started"'!' || err "cannot start Zabbix Server"'!'
 fi
 
-if [ $O_PRX -eq 1 ]; then
-    bin=sbin/zabbix_proxy
-    opts=
-    [ -e $bin ] || err "Zabbix Proxy ($bin) not available"'!'
-    opts="-c $O_ZCONFDIR/zabbix_proxy.conf"
-    msg "starting $bin $opts"
-    $bin $opts
-    rv=$?
-    sleep 1
-    [ $rv -eq 0 ] && pgrep -u $USER -l zabbix_proxy >/dev/null && msg "Zabbix Proxy started"'!' || err "cannot start Zabbix Proxy"'!'
-fi
-
 bin=sbin/zabbix_agentd
 if [ -x $bin ]; then
     opts=
@@ -83,6 +71,28 @@ if [ -x $bin ]; then
     rv=$?
     sleep 1
     [ $rv -eq 0 ] && pgrep -u $USER -l zabbix_agentd >/dev/null && msg "Zabbix Agent started"'!' || err "cannot start Zabbix Agent"'!'
+fi
+
+if [ $O_PRX -eq 1 ]; then
+    bin=sbin/zabbix_proxy
+    opts=
+    [ -e $bin ] || err "Zabbix Proxy ($bin) not available"'!'
+
+    opts="-c $O_ZCONFDIR/zabbix_proxy.conf"
+    msg "starting $bin $opts"
+    $bin $opts
+    rv=$?
+    sleep 1
+    [ $rv -eq 0 ] && pgrep -u $USER -l zabbix_proxy >/dev/null && msg "Zabbix Proxy started"'!' || err "cannot start Zabbix Proxy"'!'
+
+    if [ -f "$O_ZCONFDIR/zabbix_proxy2.conf" ]; then
+	opts="-c $O_ZCONFDIR/zabbix_proxy2.conf"
+	msg "starting $bin $opts"
+	$bin $opts
+	rv=$?
+	sleep 1
+	[ $rv -eq 0 ] && pgrep -u $USER -lf zabbix_proxy2 >/dev/null && msg "Zabbix Proxy2 started"'!' || err "cannot start Zabbix Proxy2"'!'
+    fi
 fi
 
 exit $rv

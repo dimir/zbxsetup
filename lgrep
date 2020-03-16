@@ -46,6 +46,7 @@ PROCS=(
     "timer"                     "timer"
     "trapper"                 "trapper"
     "unreachable poller"    "unrpoller"
+    "preprocessing manager" "preproman"
 )
 
 [ $# -lt 2 ] && usage

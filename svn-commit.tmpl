@@ -4,39 +4,46 @@
 #
 
 if [ $# -ne 1 ]; then
-    echo "usage: $0 file"
-    exit 1
+	echo "usage: $0 file"
+	exit 1
 fi
 
 file=$1
 
 ed=$EDITOR
-[ -z $ed ] && ed=emacs
+[ -z "$ed" ] && ed=emacs
 
+branch=
 if [[ $file =~ 'svn-commit' ]]; then
-    branch=${SVN_LAST_PWD##*/}
+	if [[ -z "$SVN_LAST_PWD" ]]; then
+		branch="UNKNOWN"
+	elif [[ $SVN_LAST_PWD =~ "/rsm" ]]; then
+		branch="RSM-1"
+	else
+		branch=${SVN_LAST_PWD##*/}
+	fi
 
-    cat <<ENDTEMPLATE >$file.$$
+	cat <<ENDTEMPLATE >$file.$$
 ADFGIJLPST
 .......... [$branch] 
 ENDTEMPLATE
 else
-    >$file.$$
+	>$file.$$
 fi
 
 cat $file >> $file.$$
 
 sum=`cksum $file.$$`
 if $ed $file.$$; then
-    newsum=`cksum $file.$$`
-    if [ "$newsum" != "$sum" ]; then
-        rm -f $file
-        mv $file.$$ $file
-    else
-        # no changes
-        rm -f $file.$$
-    fi
+	newsum=`cksum $file.$$`
+	if [ "$newsum" != "$sum" ]; then
+		rm -f $file
+		mv $file.$$ $file
+	else
+		# no changes
+		rm -f $file.$$
+	fi
 else
-    echo "Error: \"$ed $file.$$\" failed"
-    exit 1
+	echo "Error: \"$ed $file.$$\" failed"
+	exit 1
 fi

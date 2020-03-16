@@ -12,7 +12,7 @@ script_usage()
 
 . .zbx
 
-FILES_PTRN="$O_ZCONFDIR/*.conf"
+FILES_PTRN="$O_ZCONFDIR/zabbix_*.conf"
 SERV_PRI_PORT=11337
 SERV_SEC_PORT=11338	# if proxy used
 AGENT_PORT=11339
@@ -139,7 +139,96 @@ if [ -f "$FE_CONF" ]; then
 	else
 		sed -i "s/\(.*\$ZBX_SERVER_PORT.*= ['\"]\)[^'\"]*\(['\"];\)/\1$SERV_PRI_PORT\2/"	$FE_CONF
 	fi
+
+	if grep -q '$DB\[.*SERVERS.*\]' "$FE_CONF"; then
+		webpath="$REPO/$BRANCH"
+
+		echo webpath=$webpath
+
+		sed -i "s/'NAME' => '',/'NAME' => 'Server 1',/"							$FE_CONF
+		sed -i "s/'SERVER' => 'localhost',/'SERVER' => '$DBHost',/"					$FE_CONF
+		sed -i "s/'DATABASE' => '.*',/'DATABASE' => '$DBName',/"					$FE_CONF
+		sed -i "s/'USER' => 'zabbix',/'USER' => '$DBUser',/"						$FE_CONF
+		sed -i "s|'URL' => '\(http://localhost\)/zabbix/',|'URL' => '\1/$webpath/frontends/php/',|"	$FE_CONF
+	fi
 fi
+
+target_dir="$(pwd)"
+
+pushd /opt
+if [ ! -d "$target_dir/opt/zabbix/sla" ]; then
+	[ -d zabbix/sla ] && $ECHO mv zabbix/sla "$target_dir/opt/zabbix"
+	[ -d zabbix/cache ] && $ECHO mv zabbix/cache "$target_dir/opt/zabbix"
+fi
+
+rm -f zabbix
+ln -sf "$target_dir/opt/zabbix"
+popd
+
+pushd /opt/zabbix
+ln -sf "$target_dir/bin"
+popd
+
+repo=$(basename -s .git `git config --get remote.origin.url`)
+
+if [ -z "$repo" ]; then
+	echo "cannot identify git repository (are you in the git repo directory?)"
+	exit 1
+fi
+branch=$(git branch | grep '^*' | awk '{print $2}')
+
+if [ -z "$branch" ]; then
+	echo "something impossible just happened"
+	exit -1
+fi
+
+if [ ! -d opt/zabbix/scripts ]; then
+	echo "please change directory to repository root"
+	exit 1
+fi
+
+API_PRE_DIR="/dev"
+#API_PRE_DIR="/dev" if [[ $BRANCH_NAME =~ "dev" ]]
+
+DB_NAME=dimir_${repo}_${branch}
+DB_NAME=$(echo $DB_NAME | tr -- -./ _ | tr [A-Z] [a-z])
+
+cat <<EOF > opt/zabbix/scripts/rsm.conf
+local = server_1
+
+[server_1]
+za_url = http://localhost/icann/$branch/frontends/php
+za_user = Admin
+za_password = zabbix
+db_name = $DB_NAME
+db_user = root
+db_password =
+db_host = localhost
+
+[slv]
+path = /opt/zabbix/scripts/slv
+zserver = 127.0.0.1
+zport = 11338
+max_cycles_dns = 1000
+max_cycles_dnssec = 1000
+max_cycles_rdap = 500
+max_cycles_rdds = 500
+
+[sla_api]
+; seconds, maximum period back from current time to look back for recent measurement files for an incident
+incident_measurements_limit = 3600
+; seconds, maximum period back from current time to allow for missing measurement files before exiting with non-zero
+allow_missing_measurements = 60
+; seconds, if the metric is not in cache and no measurements within this period, start generating them from this period in the past
+initial_measurements_limit = 7200;
+
+[salesforce]
+username = someone@example.com
+password = password
+
+[redis]
+enabled = 0
+EOF
 
 while [ -n "$1" ]; do
 	if [[ $1 =~ = ]]; then

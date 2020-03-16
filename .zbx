@@ -105,9 +105,13 @@ exec_sql()
     CMD=
 
     if [ "p" = "$O_DB" ]; then
-	CMD="psql -v ON_ERROR_STOP=1 -q -U $O_DBUSER"
+        ADDOPTS=
+	[ "$O_DEBUG" = "1" ] && ADDOPTS="-a"
+	CMD="psql $ADDOPTS -v ON_ERROR_STOP=1 -q -U $O_DBUSER"
     elif [ "m" = "$O_DB" ]; then
-	CMD="mysql -u $O_DBUSER"
+        ADDOPTS=
+	[ "$O_DEBUG" = "1" ] && ADDOPTS="-v"
+	CMD="mysql $ADDOPTS -u $O_DBUSER -t"
     else
 	echo unsupported db type: $O_DB
 	exit
@@ -127,7 +131,7 @@ exec_sql()
 ZBX_RETVAL=
 fix_db_name()
 {
-    ZBX_RETVAL=$(echo $1 | tr -- -. _ | tr [A-Z] [a-z])
+    ZBX_RETVAL=$(echo $1 | tr -- -./ _ | tr [A-Z] [a-z])
 }
 
 defaults=(
@@ -150,8 +154,25 @@ O_ARGS="$*"
 # file with defaults
 ZBX_DEFAULTS="$(dirname $0)/.zbx-defaults"
 
+REPO=$(basename -s .git `git config --get remote.origin.url`)
+BRANCH=$(git branch | grep '^*' | awk '{print $2}')
+
+if [ -z "$REPO" ]; then
+	echo "cannot identify git repository (are you in the git repo directory?)"
+	exit 1
+fi
+
+echo REPO=$REPO
+
+if [ -z "$BRANCH" ]; then
+	echo "something impossible just happened"
+	exit -1
+fi
+
+echo BRANCH=$BRANCH
+
 DB_PREFIX=dimir
-fix_db_name $(basename $(pwd))
+fix_db_name ${REPO}_${BRANCH}
 DB_POSTFIX=$ZBX_RETVAL
 
 EMAIL=vladimir.levijev@zabbix.com
@@ -185,8 +206,7 @@ while [ -n "$1" ]; do
             ;;
         -n)
             shift
-	    fix_db_name $1
-	    write_default O_DBNAME $ZBX_RETVAL
+	    write_default O_DBNAME $1
             ;;
         -p)
 	    shift
