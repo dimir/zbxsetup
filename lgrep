@@ -61,6 +61,7 @@ PROCS=(
 	"report writer"         "rprt wrtr"
 	"report manager"        "rprt mngr"
 	"service manager"       "srvc mngr"
+	"snmp poller"           "snmp pllr"
 	"snmp trapper"          "snmp trpr"
 	"self-monitoring"       "  selfmon"
 	"task manager"          "task mngr"
