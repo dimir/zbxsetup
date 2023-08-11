@@ -51,7 +51,7 @@ PROCS=(
 	"listener"              " listener"
 	"lld manager"           "lld mangr"
 	"lld worker"            "lld workr"
-	"main process"          "     main"
+	"main process"          "main proc"
 	"node watcher"          "nod wtchr"
 	"odbc poller"           "odbcpollr"
 	"poller"                "   poller"
