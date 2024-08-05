@@ -4,11 +4,12 @@ usage()
     echo "Options:"
     echo -e "\t-v\t\tversion (18 for 1.8 and 20 for 2.0)"
     echo -e "\t-t\t\tdatabase type (m for mysql and p for postgresql)"
-    echo -e "\t-n\t\tspecify database name"
     echo -e "\t-p\t\tenable proxy (1 - yes, 0 - no)"
-    echo -e "\t-s <server>\tspecify db server host"
+    echo -e "\t-n <dbname>\tspecify database name"
     echo -e "\t-u <dbuser>\tspecify db user"
     echo -e "\t-w <dbpass>\tspecify db password"
+    echo -e "\t-r <path>\tspecify URL path"
+    echo -e "\t-s <server>\tspecify db server host"
     echo -e "\t-c <directory>\tspecify configuration files directory (default: /etc/zabbix)"
     echo -e "\t-l <directory>\tspecify log and pid files directory (default: /tmp)"
     echo -e "\t-d\t\tenable debug (1 - yes, 0 - no)"
@@ -107,11 +108,13 @@ exec_sql()
     if [ "p" = "$O_DB" ]; then
         ADDOPTS=
 	[ "$O_DEBUG" = "1" ] && ADDOPTS="-a"
+	export PGPASSWORD=$O_DBPASS
 	CMD="psql $ADDOPTS -v ON_ERROR_STOP=1 -q -U $O_DBUSER"
     elif [ "m" = "$O_DB" ]; then
         ADDOPTS=
 	[ "$O_DEBUG" = "1" ] && ADDOPTS="-v"
-	CMD="mysql $ADDOPTS -u $O_DBUSER -t"
+	CMD="mysql $ADDOPTS -u $O_DBUSER -p$O_DBPASS"
+	CMD="mysql $ADDOPTS -u $O_DBUSER -p$O_DBPASS -t"
     else
 	echo unsupported db type: $O_DB
 	exit
@@ -123,9 +126,21 @@ exec_sql()
     [ -n "$db_name" ] && msg="$msg:$db_name"
     msg="$msg] $cmd"
 
-    echo $msg
+    >&2 echo $msg
 
     $CMD "$@"
+}
+
+set_ini()
+{
+	local file=$1
+	local section=$2
+	local key=$3
+	local value=$4
+
+	echo "[$section] $key = $value"
+
+	sed -i -r "/\[$section\]/,/\[/ s,^($key.*=).*,\1 $value," $file
 }
 
 ZBX_RETVAL=
@@ -134,18 +149,39 @@ fix_db_name()
     ZBX_RETVAL=$(echo $1 | tr -- -./ _ | tr [A-Z] [a-z])
 }
 
+REPO=$(basename -s .git `git config --get remote.origin.url`)
+
+if [ -z "$REPO" ]; then
+	echo "cannot identify git repository (are you in the git repo directory?)"
+	exit 1
+fi
+
+BRANCH=$(git describe --exact-match --tags $(git log -n1 --pretty='%h') 2>&1)
+
+if [ $? -eq 0 ]; then
+	BRANCH="tag-$BRANCH"
+else
+	BRANCH=$(git branch | grep '^*' | awk '{print $2}')
+
+	if [ -z "$BRANCH" ]; then
+		echo "something impossible just happened"
+		exit -1
+	fi
+fi
+
 defaults=(
     O_DEBUG		0		# debug enabled (NB! THIS ENTRY SHOULD BE FIRST)
     O_VER		20		# Zabbix version (2.0)
     O_DB		m		# DB type (MySQL)
-    O_DBUSER		root		# DB user
-    O_DBPASS		""		# DB password
+    O_DBUSER		zabbix		# DB user
+    O_DBPASS		password	# DB password
     O_DBHOST		localhost	# DB host
     O_DBNAME		""		# DB name
     O_PRX_DBNAME	""		# proxy DB name
     O_PRX		0		# proxy enabled
-    O_ZCONFDIR		"/etc/zabbix"	# configuration files directory
-    O_ZLOGDIR		"/tmp"		# log and pid files directory
+    O_ZCONFDIR		/etc/zabbix	# configuration files directory
+    O_ZLOGDIR		/tmp		# log and pid files directory
+    O_URLPATH           ""		# base URL path to zabbix
 )
 
 # remember initial command-line args
@@ -153,23 +189,6 @@ O_ARGS="$*"
 
 # file with defaults
 ZBX_DEFAULTS="$(dirname $0)/.zbx-defaults"
-
-REPO=$(basename -s .git `git config --get remote.origin.url`)
-BRANCH=$(git branch | grep '^*' | awk '{print $2}')
-
-if [ -z "$REPO" ]; then
-	echo "cannot identify git repository (are you in the git repo directory?)"
-	exit 1
-fi
-
-echo REPO=$REPO
-
-if [ -z "$BRANCH" ]; then
-	echo "something impossible just happened"
-	exit -1
-fi
-
-echo BRANCH=$BRANCH
 
 DB_PREFIX=dimir
 fix_db_name ${REPO}_${BRANCH}
@@ -208,6 +227,12 @@ while [ -n "$1" ]; do
             shift
 	    write_default O_DBNAME $1
             ;;
+        -r)
+            shift
+            set -x
+            write_default O_URLPATH $1
+            set +x
+            ;;
         -p)
 	    shift
 	    p=
@@ -234,7 +259,7 @@ while [ -n "$1" ]; do
 	    ;;
         -c)
             shift
-	    [ -z "$1" -o ! -d "$1" ] && err "invalid configuration files directory specified"
+	    [ -z "$1" -o ! -d "$1" ] && err "invalid configuration directory ($1)"
 	    write_default O_ZCONFDIR $1
             ;;
         -l)
@@ -284,6 +309,16 @@ if [ $O_PRX -eq 1 ]; then
 fi
 
 write_default O_PRX_DBNAME $PRX_DBName
+
+if [ -z "$O_URLPATH" ]; then
+	if [ -d opt ]; then
+		O_URLPATH="icann/$BRANCH"
+	else
+		O_URLPATH="zabbix/$BRANCH"
+	fi
+
+	write_default O_URLPATH $O_URLPATH
+fi
 
 DBUser=$O_DBUSER
 DBPassword=$O_DBPASS

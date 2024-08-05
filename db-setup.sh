@@ -4,6 +4,7 @@ script_usage()
 {
 	echo -e "\t-p\t\tonly setup proxy db";
 	echo -e "\t-c\t\tonly create db, do not import anything";
+	echo -e "\t-s\t\tonly create db, add schema but no data";
 	echo -e "\t-x\t\tdo not apply extra modifications to db";
 }
 
@@ -21,6 +22,7 @@ export PGOPTIONS='-c client_min_messages=warning' # disable NOTICEs in case of P
 
 onlyproxy=0
 onlycreate=0
+onlyschema=0
 noextra=0
 stop=0
 while [ -n "$1" ]; do
@@ -30,6 +32,9 @@ while [ -n "$1" ]; do
 			;;
 		-c)
 			onlycreate=1
+			;;
+		-s)
+			onlyschema=1
 			;;
 		-x)
 			noextra=1
@@ -72,6 +77,22 @@ if [ 20 -eq "$O_VER" ]; then
 	DATA_SQL="database/$DB_DIR/data.sql"
 fi
 
+if [ $onlyproxy -eq 0 ]; then
+	DB=$DBName
+	exec_sql $DB "create database" < <(echo "create database $DB $CHARSET_CREATE")	|| exit
+	[ $onlycreate -eq 1 ] && exit
+	exec_sql $DB "import schema" $DB < $SCHEMA_SQL					|| exit
+	[ $onlyschema -eq 1 ] && exit
+
+	if [ $O_VER -eq 18 ]; then
+		exec_sql $DB "import data" $DB < $DATA_SQL	|| exit
+		exec_sql $DB "import images" $DB < $IMAGES_SQL	|| exit
+	else
+		exec_sql $DB "import images" $DB < $IMAGES_SQL	|| exit
+		exec_sql $DB "import data" $DB < $DATA_SQL	|| exit
+	fi
+fi
+
 # proxy
 if [ $O_PRX -eq 1 ]; then
 	DB=$PRX_DBName
@@ -83,35 +104,10 @@ elif [ $onlyproxy -eq 1 ]; then
 	msg "no proxy db specified"
 fi
 
-[ $onlyproxy -eq 1 ] && exit
-
-DB=$DBName
-exec_sql $DB "create database" < <(echo "create database $DB $CHARSET_CREATE")	|| exit
-[ $onlycreate -eq 1 ] && exit
-exec_sql $DB "import schema" $DB < $SCHEMA_SQL					|| exit
-
-if [ $O_VER -eq 18 ]; then
-	exec_sql $DB "import data" $DB < $DATA_SQL	|| exit
-	exec_sql $DB "import images" $DB < $IMAGES_SQL	|| exit
-else
-	exec_sql $DB "import images" $DB < $IMAGES_SQL	|| exit
-	exec_sql $DB "import data" $DB < $DATA_SQL	|| exit
-fi
-
 [ $noextra -eq 1 ] && exit
 
 cmds=(
-	"update media_type set smtp_server='mail.zabbix.com',smtp_helo='zabbix.com',smtp_email='dimir@zabbix.com' where description='Email'"
-	"update config set refresh_unsupported=15"
-	"update users set autologout=0,rows_per_page=300"
-	"update media set active=1 where mediaid=1"
-	"update actions set def_shortdata='{TRIGGER.STATUS}: {TRIGGER.NAME} ({EVENT.TAGS})', r_shortdata='{TRIGGER.STATUS}: {TRIGGER.NAME} ({EVENT.TAGS})', status=0 where eventsource=0"
-	"update globalmacro set value=1 where macro='\{$RSM.RDAP.PROBE.ONLINE}'"
 )
-
-if [ $O_VER -ne 18 ]; then
-	cmds+=("update interface set port=11339")
-fi
 
 i=0
 while [ "${cmds[$i]}" ]; do

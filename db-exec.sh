@@ -4,7 +4,8 @@ set -f # do not expand wildcards
 
 script_usage()
 {
-    echo -e "\t-p\t\tconnect to proxy DB"
+	echo -e "\t-p\t\tconnect to proxy DB"
+	echo -e "\t*\t\tadditional parameters to the database"
 }
 
 . .zbx
@@ -12,20 +13,24 @@ script_usage()
 SQL=
 DB="$O_DBNAME"
 
-if [ "$1" = "-p" ]; then
-    shift
-    DB="$O_PRX_DBNAME"
-fi
-
 interactive=1
-if [ $# -gt 0 ]; then
-    interactive=0
-    SQL="$@"
-    shift
-fi
+while [ -n "$1" ]; do
+	case "$1" in
+		-p)
+			DB="$O_PRX_DBNAME"
+			;;
+		*)
+			SQL="$1"
+			shift
+			interactive=0
+			break
+			;;
+	esac
+	shift
+done
 
 if [ $interactive -eq 1 ]; then
-    exec_sql "$DB" "interactive console" "$DB"
+	exec_sql "$DB" "interactive console" "$DB" "$@"
 else
-    exec_sql "$DB" "$SQL" "$DB" < <(echo "$SQL")
+	exec_sql "$DB" "$SQL" "$DB" "$@" < <(echo "$SQL")
 fi

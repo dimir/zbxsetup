@@ -12,7 +12,9 @@ dump()
 
 	CMD=
 	if [ "m" = "$O_DB" ]; then
-		CMD="mysqldump -u $O_DBUSER -h $DBHost $db"
+		CMD="mysqldump -u $O_DBUSER -p$O_DBPASS -h $DBHost $db"
+	elif [ "p" = "$O_DB" ]; then
+		CMD="env PGPASSWORD=$O_DBPASS pg_dump -U $O_DBUSER -h $DBHost $db"
 	else
 		echo "unsupported db type: $O_DB"
 		exit 1

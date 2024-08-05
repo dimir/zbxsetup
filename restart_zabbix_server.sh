@@ -1,4 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+#set -o errexit
+#set -o nounset
+set -o pipefail
+#set -o xtrace
 
 script_usage()
 {
@@ -51,6 +56,30 @@ elif ls $O_ZLOGDIR/zabbix*.log >/dev/null 2>&1; then
 fi
 
 if [ $opt_start_server -eq 1 ]; then
+	out=$(grep '^DBName=' $O_ZCONFDIR/zabbix_server.conf)
+	[ -n "$out" ] && msg "server $out"
+fi
+if [ $O_PRX -eq 1 ]; then
+	out=$(grep '^DBName=' $O_ZCONFDIR/zabbix_proxy.conf)
+	[ -n "$out" ] && msg " proxy $out"
+fi
+
+if [ -f /opt/zabbix ]; then
+	if [ ! -L /opt/zabbix ]; then
+		echo "cannot continue: directory /opt/zabbix exists"
+		exit 1
+	fi
+
+	sudo rm -f /opt/zabbix
+fi
+
+sudo ln -sf /home/vl/git/icann/dev-rdds/opt/zabbix /opt/zabbix
+
+if [ -x opt/zabbix/scripts/setup-cron.pl ]; then
+	sudo opt/zabbix/scripts/setup-cron.pl --user vl --enable
+fi
+
+if [ $opt_start_server -eq 1 ]; then
     bin=sbin/zabbix_server
     opts=
     [ -e $bin ] || err "Zabbix Server ($bin) not available"'!'
@@ -85,14 +114,16 @@ if [ $O_PRX -eq 1 ]; then
     sleep 1
     [ $rv -eq 0 ] && pgrep -u $USER -l zabbix_proxy >/dev/null && msg "Zabbix Proxy started"'!' || err "cannot start Zabbix Proxy"'!'
 
-    if [ -f "$O_ZCONFDIR/zabbix_proxy2.conf" ]; then
-	opts="-c $O_ZCONFDIR/zabbix_proxy2.conf"
-	msg "starting $bin $opts"
-	$bin $opts
-	rv=$?
-	sleep 1
-	[ $rv -eq 0 ] && pgrep -u $USER -lf zabbix_proxy2 >/dev/null && msg "Zabbix Proxy2 started"'!' || err "cannot start Zabbix Proxy2"'!'
-    fi
+    for i in 2 3 4; do
+	    if [ -f "$O_ZCONFDIR/zabbix_proxy$i.conf" ]; then
+		    opts="-c $O_ZCONFDIR/zabbix_proxy$i.conf"
+		    msg "starting $bin $opts"
+		    $bin $opts
+		    rv=$?
+		    sleep 1
+		    [ $rv -eq 0 ] && pgrep -u $USER -lf zabbix_proxy$i >/dev/null && msg "Zabbix Proxy$i started"'!' || err "cannot start Zabbix Proxy$i"'!'
+	    fi
+    done
 fi
 
 exit $rv
