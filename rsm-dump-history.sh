@@ -4,7 +4,7 @@ ptrn=
 from=
 till=
 
-select_fields="h.host,i.key_,s.itemid,s.clock,from_unixtime(s.clock) as clock,s.value"
+select_fields="h.host,i.key_,s.itemid,concat(from_unixtime(s.clock), ' (', s.clock, ')') as clock,s.value"
 order="order by h.host,i.key_,s.clock"
 
 (
@@ -45,4 +45,4 @@ order="order by h.host,i.key_,s.clock"
 		echo "  $i:"
 		db-exec.sh "select $select_fields from $i s,items i,hosts h,hstgrp g,hosts_groups hg where hg.hostid=h.hostid and hg.groupid=g.groupid and h.hostid=i.hostid and i.itemid=s.itemid and g.groupid in (140,190)  ${time_cond}${ptrn_cond}${order}"
 	done
-) 2>/dev/null | less
+) 2>&1 | grep -v '^\['
