@@ -5,14 +5,18 @@ declare order="order by h.host,i.key_,s.clock"
 declare clock_field="s.clock"
 declare -a search_columns=(h.host i.key_)
 
-# "Probes - Mon", "TLDs", "TLD Probe results"
-declare groups="130,140,190"
-
 (
 	source .rsm-dump
 
+	db-exec.sh "select case when i.status=0 then 'Enabled' when i.status=1 then 'Disabled' end as 'status',h.host,i.key_,i.itemid,case when i.value_type=0 then 'FLOAT' when i.value_type=1 then 'STR' when i.value_type=3 then 'INT' else i.value_type end as type
+			from items i
+			left join hosts h on h.hostid=i.hostid
+			where i.templateid is not null
+				${ptrn_cond}
+			order by h.host,i.key_" -t
+
 	declare cond
-	for i in history_uint history; do
+	for i in lastvalue lastvalue_str; do
 		echo "  $i:"
 		cond="${ptrn_cond}"
 		[[ $i =~ lastvalue ]] || cond+="${time_cond}"
@@ -22,6 +26,8 @@ declare groups="130,140,190"
 					and hg.groupid=g.groupid
 					and h.hostid=i.hostid
 					and i.itemid=s.itemid
-					and g.groupid in (130,140,190) ${cond}${order}" -t
+					and g.groupid in (140,190)
+					${cond}
+				${order}" -t
 	done
 ) 2>&1 | grep -v '^\['

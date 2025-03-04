@@ -1,0 +1,70 @@
+	declare -a ptrns
+	declare from
+	declare till
+	declare time_cond
+	declare ptrn_cond
+
+	while [ -n "$1" ]; do
+		if [[ "$1" = "-h" || "$1" = "--help" ]]; then
+			echo "usage: $0 <options>"
+			echo
+			echo "Options:"
+			echo "<from>                    - in format 0000-00-00 00:00:00 (optional)"
+			echo "<till>                    - in format 0000-00-00 00:00:00 (optional)"
+			echo "<pattern> [<pattern> ...] - search pattern that will be applied to columns: ${search_columns[@]} (optional)"
+
+			exit 1
+		fi
+
+		if [[ "$1" =~ [0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2} ]]; then
+			if [ -z "$from" ]; then
+				echo "from: $1"
+				from="$1"
+			elif [ -z "$till" ]; then
+				echo "till: $1"
+				till="$1"
+			else
+				echo "invalid parameter: $1"
+				exit 1
+			fi
+		else
+			ptrns+=("$1")
+		fi
+
+		shift
+	done
+
+	if [ -n "$from" ]; then
+		if [ -n "$till" ]; then
+			time_cond="and ${clock_field} between unix_timestamp('$from') and unix_timestamp('$till') "
+		else
+			time_cond="and ${clock_field}>=unix_timestamp('$from') "
+		fi
+	fi
+
+	if [[ ${#ptrns[@]} -ne 0 ]]; then
+		index=0
+		for i in "${ptrns[@]}"; do
+			if [[ $index -eq 0 ]]; then
+				ptrn_cond+="and ("
+			else
+				ptrn_cond+=" and "
+			fi
+
+			declare str=""
+			for c in  "${search_columns[@]}"; do
+				if [ -z "$str" ]; then
+					str="$c like '%$i%'"
+				else
+					str+=" or $c like '%$i%'"
+				fi
+			done
+
+			ptrn_cond+="($str)"
+
+			if [[ ${#ptrns[@]}-1 -eq $index ]]; then
+				ptrn_cond+=") "
+			fi
+			((index++))
+		done
+	fi
