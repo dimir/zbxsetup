@@ -79,18 +79,6 @@ if [ -x opt/zabbix/scripts/setup-cron.pl ]; then
 	sudo opt/zabbix/scripts/setup-cron.pl --user vl --enable
 fi
 
-if [ $opt_start_server -eq 1 ]; then
-    bin=sbin/zabbix_server
-    opts=
-    [ -e $bin ] || err "Zabbix Server ($bin) not available"'!'
-    opts="-c $O_ZCONFDIR/zabbix_server.conf"
-    msg "starting $bin $opts"
-    $bin $opts
-    rv=$?
-    sleep 1
-    [ $rv -eq 0 ] && pgrep -u $USER -l zabbix_server >/dev/null && msg "Zabbix Server started"'!' || err "cannot start Zabbix Server"'!'
-fi
-
 bin=sbin/zabbix_agentd
 if [ -x $bin ]; then
     opts=
@@ -124,6 +112,18 @@ if [ $O_PRX -eq 1 ]; then
 		    [ $rv -eq 0 ] && pgrep -u $USER -lf zabbix_proxy$i >/dev/null && msg "Zabbix Proxy$i started"'!' || err "cannot start Zabbix Proxy$i"'!'
 	    fi
     done
+fi
+
+if [ $opt_start_server -eq 1 ]; then
+    bin=sbin/zabbix_server
+    opts=
+    [ -e $bin ] || err "Zabbix Server ($bin) not available"'!'
+    opts="-c $O_ZCONFDIR/zabbix_server.conf"
+    msg "starting $bin $opts"
+    $bin $opts
+    rv=$?
+    sleep 1
+    [ $rv -eq 0 ] && pgrep -u $USER -l zabbix_server >/dev/null && msg "Zabbix Server started"'!' || err "cannot start Zabbix Server"'!'
 fi
 
 exit $rv
