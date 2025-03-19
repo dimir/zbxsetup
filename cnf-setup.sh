@@ -210,7 +210,7 @@ fi
 CONF="rsm-api/config.php"
 
 if [ -f $CONF.example ]; then
-	alerts_dir="/tmp/alerts"
+	alerts_dir="/tmp/rsm-tests/alerts"
 
 	cp -v $CONF.example $CONF
 
@@ -295,7 +295,7 @@ if [ -f $CONF.example ]; then
 	set_ini $CONF server_1 db_user    zabbix
 	set_ini $CONF server_1 dbpassword password
 
-	set_ini $CONF slv zport              $SERVER_PORT_SECONDARY
+	set_ini $CONF slv zport              $SERVER_PORT
 	set_ini $CONF slv max_cycles_dns     1000
 	set_ini $CONF slv max_cycles_dnssec  1000
 	set_ini $CONF slv max_cycles_rdds    500
@@ -307,3 +307,7 @@ if [ -f $CONF.example ]; then
 	set_ini $CONF data_export output_dir /opt/zabbix/export
 fi
 
+#db-exec.sh "update globalmacro set value='192.112.36.4,192.58.128.30,198.41.0.4,198.97.190.53,192.33.4.12,170.247.170.2' where macro='{\$RSM.IP4.ROOTSERVERS1}'"
+#db-exec.sh "update globalmacro set value='1' where macro like '{\$RSM.%.PROBE.ONLINE}'"
+#db-exec.sh "update globalmacro set value='2' where macro like '{\$RSM.%.MIN.PROBE.ONLINE}'"
+#db-exec.sh "update globalmacro set value=1 where macro like '%INCIDENT%'"

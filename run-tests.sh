@@ -86,22 +86,15 @@ if [ $OPT_SOURCES -eq 1 ]; then
 	if [ $OPT_REBUILD -eq 1 ]; then
 		rm -rf ${TESTS_DIR_FULL}/src
 		cp -a $(pwd) ${TESTS_DIR_FULL}/src
-
-		ln -sf ${TESTS_DIR_FULL}/src/opt/zabbix/scripts/CSlaReport.php ${TESTS_DIR_FULL}/src/ui/include/classes/services/CSlaReport.php
 	else
-		# keep default file
-		default_file="rsm.conf.default"
-		if [ -f ${TESTS_DIR_FULL}/src/opt/zabbix/scripts/$default_file ]; then
-			mv -v ${TESTS_DIR_FULL}/src/opt/zabbix/scripts/$default_file /tmp
-		fi
-
-		for i in automated-tests ui rsm-api opt; do
+		# do not add "database" to the list as "make dbschema" might not be run locally
+		for i in automated-tests ui rsm-api opt probe-scripts; do
 			rm -rf ${TESTS_DIR_FULL}/src/$i
 			cp -a $(pwd)/$i ${TESTS_DIR_FULL}/src
 		done
-
-		mv /tmp/$default_file ${TESTS_DIR_FULL}/src/opt/zabbix/scripts/
 	fi
+
+	ln -sf ${TESTS_DIR_FULL}/src/opt/zabbix/scripts/CSlaReport.php ${TESTS_DIR_FULL}/src/ui/include/classes/services/CSlaReport.php
 fi
 
 pushd ${TESTS_DIR_FULL}/src > /dev/null
@@ -110,7 +103,7 @@ pushd ${TESTS_DIR_FULL}/src > /dev/null
 sudo opt/zabbix/scripts/setup-cron.pl --disable
 
 # stop server/proxy
-pkill -f 'zabbix_(server|proxy)'
+pkill -f 'bin/zabbix_(server|proxy)'
 
 if [ $OPT_REBUILD -eq 1 ]; then
 	[ -f Makefile ] && make -s distclean
@@ -126,7 +119,9 @@ if [ $OPT_SOURCES -eq 1 ]; then
 	. .zbx
 
 	# this will set up basic configuration, we'll need to tweak some of them later
-	cnf-setup.sh -t m -n dimir_rsm_tests -r ${TESTS_DIR}/src
+	cnf-setup.sh -p 0 -t m -n dimir_rsm_tests -r ${TESTS_DIR}/src
+
+	cp -v -f /opt/zabbix/scripts/rsm.conf /opt/zabbix/scripts/rsm.conf.default
 
 	if [ $OPT_REBUILD -eq 1 ]; then
 		db-drop.sh
@@ -134,9 +129,11 @@ if [ $OPT_SOURCES -eq 1 ]; then
 
 	webpath="${TESTS_DIR}/src/ui"
 	rsmapipath="${TESTS_DIR}/src/rsm-api"
-	alerts_dir="/tmp/alerts"
+	alerts_dir="/tmp/rsm-tests/alerts"
 
-	mkdir -p $alerts_dir
+# This causes more mess because it's recreated by cnf-setup.sh and then test framework, let's leave it to test framework
+#	mkdir -p $alerts_dir
+#	sudo chown www-data $alerts_dir
 
 	# set up config for tests
 	CF="${FW_DIR}/tests.conf"
@@ -151,9 +148,9 @@ if [ $OPT_SOURCES -eq 1 ]; then
 
 	sed -i 's,^socket_dir=.*,socket_dir='${TESTS_DIR_FULL}',g'                         "$CF"
 	sed -i 's,^pid_file=.*,pid_file='${TESTS_DIR_FULL}'/zabbix_server.pid,g'           "$CF"
-	sed -i 's,^db_name=.*,db_name='${DBName}',g'                                       "$CF"
-	sed -i 's,^db_username=.*,db_username='${DBUser}',g'                               "$CF"
-	sed -i 's,^db_password=.*,db_password='${DBPassword}',g'                           "$CF"
+	sed -i 's,^db_name=.*,db_name='${O_DBNAME}',g'                                     "$CF"
+	sed -i 's,^db_username=.*,db_username='${O_DBUSER}',g'                             "$CF"
+	sed -i 's,^db_password=.*,db_password='${O_DBPASS}',g'                             "$CF"
 
 	sed -i -rz 's,\[frontend\]\nurl=,[frontend]\nurl=http://'${WEB_IP}'/'$webpath','   "$CF"
 	sed -i -rz 's,\[rsm-api\]\nurl=,[rsm-api]\nurl=http://'${WEB_IP}'/'$rsmapipath','  "$CF"
@@ -182,6 +179,8 @@ fi
 total=$(grep --color=none 'failures="' test-results.xml | sed -r 's/.* tests="([[:digit:]]+)" .*/\1/')
 failures=$(grep --color=none 'failures="' test-results.xml | sed -r 's/.* failures="([[:digit:]]+)" .*/\1/')
 
+EC=0
+
 echo
 if [ $total -eq 0 ]; then
 	echo "No tests performed"
@@ -193,6 +192,7 @@ else
 			echo "All $total tests successful"
 		fi
 	else
+		EC=1
 		if [ $failures -eq $total ]; then
 			if [ $total -eq 1 ]; then
 				echo "Test failed:"
@@ -210,3 +210,5 @@ echo "Full output is available in file $TESTS_LOG"
 
 popd > /dev/null
 popd > /dev/null
+
+exit $EC
