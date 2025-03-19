@@ -91,6 +91,17 @@ if [ $onlyproxy -eq 0 ]; then
 		exec_sql $DB "import images" $DB < $IMAGES_SQL	|| exit
 		exec_sql $DB "import data" $DB < $DATA_SQL	|| exit
 	fi
+	declare -A macros=(
+		['{$RSM.IP4.ROOTSERVERS1}']='193.0.14.129,192.5.5.241,199.7.83.42,198.41.0.4,192.112.36.4',
+		['{$RSM.IP6.ROOTSERVERS1}']='2001:7fe::53,2001:500:2f::f,2001:500:9f::42,2001:503:ba3e::2:30,2001:500:12::d0d',
+		['{$RSM.MONITORING.TARGET}']='registry'
+	)
+	for macro in ${!macros[@]}; do
+		exec_sql $DB "set global macro '${macro}'" $DB < <(echo "update globalmacro set value='${macros[${macro}]}' where macro='${macro}'") || exit
+	done
+
+	exec_sql $DB "set global macros '{$RSM.%.PROBE.ONLINE}'" $DB < <(echo "update globalmacro set value='1' where macro like '{\$RSM.%.PROBE.ONLINE}'") || exit
+	exec_sql $DB "change item history period" $DB < <(echo "update items set history='1h' where history!='0'") || exit
 fi
 
 # proxy
