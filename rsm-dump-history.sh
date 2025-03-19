@@ -22,6 +22,6 @@ declare groups="130,140,190"
 					and hg.groupid=g.groupid
 					and h.hostid=i.hostid
 					and i.itemid=s.itemid
-					and g.groupid in (130,140,190) ${cond}${order}" -t
+					and g.groupid in (120,130,140,190) ${cond}${order}" -t
 	done
 ) 2>&1 | grep -v '^\['

@@ -26,7 +26,7 @@ declare -a search_columns=(h.host i.key_)
 					and hg.groupid=g.groupid
 					and h.hostid=i.hostid
 					and i.itemid=s.itemid
-					and g.groupid in (140,190)
+					and g.groupid in (120,130,140,190)
 					${cond}
 				${order}" -t
 	done
