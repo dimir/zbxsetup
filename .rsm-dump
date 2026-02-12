@@ -54,9 +54,9 @@
 			declare str=""
 			for c in  "${search_columns[@]}"; do
 				if [ -z "$str" ]; then
-					str="$c like '%$i%'"
+					str="$c COLLATE utf8mb3_unicode_ci like '%$i%'"
 				else
-					str+=" or $c like '%$i%'"
+					str+=" or $c COLLATE utf8mb3_unicode_ci like '%$i%'"
 				fi
 			done
 

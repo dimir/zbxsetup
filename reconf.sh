@@ -33,7 +33,6 @@ spinner()
     echo " "
 }
 
-opts=
 verspecified=0
 
 for param; do
@@ -44,6 +43,7 @@ for param; do
 done
 
 ver=
+opts=
 if [ $verspecified -eq 0 ]; then
     istrunk=$(istrunk.sh)
     [ $? -ne 0 ] && die "cannot verify current directory"
@@ -86,19 +86,23 @@ while [ -n "$1" ]; do
 	shift
 done
 
-msg="Reconfiguring for $O_DBHOST:$ver:$DB_TYPE:$DBName"
-[ $O_PRX -eq 1 ] && msg="$msg:$PRX_DBName"
+msg="Reconfiguring for $O_DBHOST:$ver:$O_DB:$DBName"
+[ $O_PRX -eq 1 ] && msg="$msg:$_DBPRX:$PRX_DBName"
 echo -n "$msg "
 spinner
 
 if [ $CONTIN -eq 0 ]; then
 	[ -f configure ] || ./bootstrap.sh || die
-	conf.sh $opts -- $ADDOPTS || die
-	cnf-setup.sh || die
+	conf.sh $opts -- -t server $ADDOPTS || die
 	make -j2 dbschema || die
+	make -j2 install > /dev/null || die
+	if [ $O_PRX -eq 1 ]; then
+		conf.sh $opts -- -t proxy $ADDOPTS || die
+		make -j2 install > /dev/null || die
+	fi
+	cnf-setup.sh $opts || die
 fi
 if [ $DB_SETUP -eq 1 ]; then
 	db-setup.sh $DB_SETUP_OPTS || die
 fi
-make -j2 install > /dev/null || die
 echo OK

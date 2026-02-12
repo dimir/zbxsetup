@@ -2,26 +2,61 @@
 
 script_usage()
 {
-    echo -e "\t\t\tadditional options to ./configure"
+	echo -e "\t-t <target>\tspecify target: server/proxy"
+	echo -e "\t\t\tadditional options to ./configure"
 }
 
 . .zbx
 
-DBPFX=
-if [ "p" = $O_DB ]; then
-    DBPFX=postgre # 2.0 and later
-    if [ 18 -eq $O_VER ]; then
-	DBPFX=pg
-    fi
-elif [ "m" = $O_DB ]; then
-    DBPFX=my
-else
-    usage
+target=
+addopts=
+while [ -n "$1" ]; do
+	case "$1" in
+		-t)
+			shift
+			if [ -z "$1" ]; then
+				usage
+			fi
+			target="$1"
+			;;
+		-*)
+			usage
+			;;
+		*)
+			addopts="${addopts} $1"
+			;;
+	esac
+	shift
+done
+
+if [ -z "$target" ]; then
+	echo "error: target must be specified"
+	usage
 fi
 
-opts="--prefix=$(pwd) --with-${DBPFX}sql --with-net-snmp --enable-server --enable-agent --enable-ipv6 --with-libcurl --with-openssl $@"
+addopts="${addopts} --enable-$target"
 
-[ 1 -eq $O_PRX ] && opts="$opts --enable-proxy"
+dbtype=
+if [ $target = "server" ]; then
+	dbtype=$O_DB
+else
+	dbtype=$O_DBPRX
+fi
+
+if [ "p" = $dbtype ]; then
+	addopts="${addopts} --with-postgresql"
+	if [ 18 -eq $O_VER ]; then
+		addopts="${addopts} --with-pgsql"
+	fi
+elif [ "m" = $dbtype ]; then
+	addopts="${addopts} --with-mysql"
+elif [ "s" = $dbtype ]; then
+	addopts="${addopts} --with-sqlite3"
+else
+	usage
+fi
+
+opts="--prefix=$(pwd) --with-net-snmp --enable-agent --enable-ipv6 --with-libcurl --with-openssl --with-libpcre2 $addopts $@"
 
 cmd="./configure $opts"
 
@@ -69,7 +104,13 @@ else
     echo
     CFLAGS="$CFLAGS_basic -DNDEBUG"
 fi
+
 export CFLAGS
+
+#export CFLAGS="-O1 -g -fno-omit-frame-pointer -gline-tables-only -fsanitize=address"
+#export CC=clang
+#export CXXFLAGS="-O1 -g -fno-omit-frame-pointer -gline-tables-only -fsanitize=address"
+#export CXX=clang
 
 echo running CFLAGS=$CFLAGS $cmd
 $cmd >/dev/null

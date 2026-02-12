@@ -13,7 +13,7 @@ script_usage()
 
 . .zbx
 
-USER=vl
+USER=zabbix
 rv=0
 
 pkill -u $USER zabbix_agentd

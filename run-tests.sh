@@ -4,9 +4,23 @@ TESTS_DIR=tmp/rsm-tests
 TESTS_DIR_FULL=~/${TESTS_DIR}
 TESTS_LOG=/tmp/rsm-tests.log
 FW_DIR=${TESTS_DIR_FULL}/src/automated-tests/framework
-WEB_IP=192.168.6.85
+CWD=$(pwd)
 
-exec &> >(tee  $TESTS_LOG)
+err()
+{
+	echo "ERR: $*"
+	exit 1
+}
+
+cleanup()
+{
+	cd ${CWD}
+
+	# restore configuration
+	cnf-setup.sh -a $webaddr -r $urlpath -n $dbname -p $proxy -t $dbtype
+}
+
+exec &> >(tee $TESTS_LOG)
 
 usage()
 {
@@ -86,18 +100,18 @@ if [ $OPT_SOURCES -eq 1 ]; then
 	if [ $OPT_REBUILD -eq 1 ]; then
 		rm -rf ${TESTS_DIR_FULL}/src
 		cp -a $(pwd) ${TESTS_DIR_FULL}/src
+
+		chown -R zabbix ${TESTS_DIR_FULL}/src/*
 	else
 		# do not add "database" to the list as "make dbschema" might not be run locally
 		for i in automated-tests ui rsm-api opt probe-scripts; do
 			rm -rf ${TESTS_DIR_FULL}/src/$i
-			cp -a $(pwd)/$i ${TESTS_DIR_FULL}/src
+			cp -a $(pwd)/$i ${TESTS_DIR_FULL}/src/
 		done
 	fi
 
 	ln -sf ${TESTS_DIR_FULL}/src/opt/zabbix/scripts/CSlaReport.php ${TESTS_DIR_FULL}/src/ui/include/classes/services/CSlaReport.php
 fi
-
-pushd ${TESTS_DIR_FULL}/src > /dev/null
 
 # disable SLV scripts
 sudo opt/zabbix/scripts/setup-cron.pl --disable
@@ -115,11 +129,32 @@ if [ $OPT_REBUILD -eq 1 ]; then
 	mkdir -p ${TESTS_DIR_FULL}/sock
 fi
 
-if [ $OPT_SOURCES -eq 1 ]; then
-	. .zbx
+chmod 777 ${TESTS_DIR_FULL}
 
+# remember current zbxsetup configuration
+webaddr=$(cnf-setup.sh -- -v 2>&1 | grep -E 'WEBADDR' --color=none | sed 's/WEBADDR=//')                ; [ -z "$webaddr" ] && err "cannot get webaddr"
+urlpath=$(cnf-setup.sh -- -v 2>&1 | grep -E 'URLPATH' --color=none | sed 's/URLPATH=//')                ; [ -z "$urlpath" ] && err "cannot get urlpath"
+dbname=$(cnf-setup.sh -- -v 2>&1 | grep -E 'DBName' --color=none | sed 's/DBName=//' | sort -u)         ; [ -z "$dbname" ] && err "cannot get dbname"
+proxy=$(cnf-setup.sh -- -v 2>&1 | grep -E 'proxy=' --color=none | sed 's/proxy=//')                     ; [ -z "$proxy" ] && err "cannot get proxy"
+dbtype=$(cnf-setup.sh -- -v 2>&1 | grep -E 'dbtype=' --color=none | sed 's/dbtype=//')                  ; [ -z "$dbtype" ] && err "cannot get dbtype"
+proxy_dbtype=$(cnf-setup.sh -- -v 2>&1 | grep -E 'proxy_dbtype=' --color=none | sed 's/proxy_dbtype=//'); [ -z "$proxy_dbtype" ] && err "cannot get proxy_dbtype"
+
+echo webaddr=$webaddr
+echo urlpath=$urlpath
+echo dbname=$dbname
+echo proxy=$proxy
+echo dbtype=$dbtype
+echo proxy_dbtype=$proxy_dbtype
+
+pushd ${TESTS_DIR_FULL}/src > /dev/null
+
+if [ $OPT_SOURCES -eq 1 ]; then
 	# this will set up basic configuration, we'll need to tweak some of them later
-	cnf-setup.sh -p 0 -t m -n dimir_rsm_tests -r ${TESTS_DIR}/src
+	cnf-setup.sh -a $webaddr -r ${TESTS_DIR}/src -n dimir_rsm_tests -p 0 -t m
+
+	trap cleanup EXIT
+
+	source .zbx
 
 	cp -v -f /opt/zabbix/scripts/rsm.conf /opt/zabbix/scripts/rsm.conf.default
 
@@ -127,8 +162,8 @@ if [ $OPT_SOURCES -eq 1 ]; then
 		db-drop.sh
 	fi
 
-	webpath="${TESTS_DIR}/src/ui"
-	rsmapipath="${TESTS_DIR}/src/rsm-api"
+	webpath="${urlpath}/ui"
+	rsmapipath="${urlpath}/rsm-api"
 	alerts_dir="/tmp/rsm-tests/alerts"
 
 # This causes more mess because it's recreated by cnf-setup.sh and then test framework, let's leave it to test framework
@@ -148,12 +183,13 @@ if [ $OPT_SOURCES -eq 1 ]; then
 
 	sed -i 's,^socket_dir=.*,socket_dir='${TESTS_DIR_FULL}',g'                         "$CF"
 	sed -i 's,^pid_file=.*,pid_file='${TESTS_DIR_FULL}'/zabbix_server.pid,g'           "$CF"
+	sed -i 's,^db_host=.*,db_host='${O_DBHOST}',g'                                     "$CF"
 	sed -i 's,^db_name=.*,db_name='${O_DBNAME}',g'                                     "$CF"
 	sed -i 's,^db_username=.*,db_username='${O_DBUSER}',g'                             "$CF"
 	sed -i 's,^db_password=.*,db_password='${O_DBPASS}',g'                             "$CF"
 
-	sed -i -rz 's,\[frontend\]\nurl=,[frontend]\nurl=http://'${WEB_IP}'/'$webpath','   "$CF"
-	sed -i -rz 's,\[rsm-api\]\nurl=,[rsm-api]\nurl=http://'${WEB_IP}'/'$rsmapipath','  "$CF"
+	sed -i -rz 's,\[frontend\]\nurl=,[frontend]\nurl=http://'$webaddr'/'$webpath','   "$CF"
+	sed -i -rz 's,\[rsm-api\]\nurl=,[rsm-api]\nurl=http://'$webaddr'/'$rsmapipath','  "$CF"
 fi
 
 pushd ${FW_DIR} > /dev/null
@@ -174,12 +210,13 @@ else
 	TZ=UTC ./run-tests.pl ${ADDOPTS} --test-case-file ../test-cases/$OPT_TCDIR/$OPT_TCPTRN
 fi
 
-[ -f test-results.xml ] || exit
+if [ ! -f test-results.xml ]; then
+	echo "No file test-results.xml found in $(pwd)!"
+	exit 1
+fi
 
 total=$(grep --color=none 'failures="' test-results.xml | sed -r 's/.* tests="([[:digit:]]+)" .*/\1/')
 failures=$(grep --color=none 'failures="' test-results.xml | sed -r 's/.* failures="([[:digit:]]+)" .*/\1/')
-
-EC=0
 
 echo
 if [ $total -eq 0 ]; then
@@ -205,6 +242,7 @@ else
 		grep --color=none '<failure>test case failed' test-results.xml -B1 | grep --color=none '<testcase name' | sed -r 's/.*testcase name="([^"]+)" .*/    \1/'
 	fi
 fi
+
 echo "Test results available in file $(pwd)/test-results.xml"
 echo "Full output is available in file $TESTS_LOG"
 

@@ -92,9 +92,10 @@ if [ $onlyproxy -eq 0 ]; then
 		exec_sql $DB "import data" $DB < $DATA_SQL	|| exit
 	fi
 	declare -A macros=(
-		['{$RSM.IP4.ROOTSERVERS1}']='193.0.14.129,192.5.5.241,199.7.83.42,198.41.0.4,192.112.36.4',
-		['{$RSM.IP6.ROOTSERVERS1}']='2001:7fe::53,2001:500:2f::f,2001:500:9f::42,2001:503:ba3e::2:30,2001:500:12::d0d',
+		['{$RSM.IP4.ROOTSERVERS1}']='193.0.14.129,192.5.5.241,199.7.83.42,198.41.0.4,192.112.36.4'
+		['{$RSM.IP6.ROOTSERVERS1}']='2001:7fe::53,2001:500:2f::f,2001:500:9f::42,2001:503:ba3e::2:30,2001:500:12::d0d'
 		['{$RSM.MONITORING.TARGET}']='registry'
+		['{$RSM.RDAP.STANDALONE}']='1'
 	)
 	for macro in ${!macros[@]}; do
 		exec_sql $DB "set global macro '${macro}'" $DB < <(echo "update globalmacro set value='${macros[${macro}]}' where macro='${macro}'") || exit
@@ -106,10 +107,16 @@ fi
 
 # proxy
 if [ $O_PRX -eq 1 ]; then
-	DB=$PRX_DBName
-	exec_sql $DB "create database" < <(echo "create database $DB $CHARSET_CREATE")	|| exit
-	if [ $onlycreate -eq 0 ]; then
-		exec_sql $DB "import schema" $DB < $SCHEMA_SQL				|| exit
+	if [ $O_DBPRX = "s" ]; then
+		> "${PRX_DBName}" || exit
+		if [ $onlycreate -eq 0 ]; then
+			sqlite3 "${PRX_DBName}" < "database/sqlite3/schema.sql"						|| exit
+		fi
+	else
+		exec_sql "${PRX_DBName}" "create database" < <(echo "create database ${PRX_DBName} $CHARSET_CREATE")	|| exit
+		if [ $onlycreate -eq 0 ]; then
+			exec_sql "${PRX_DBName}" "import schema" "${PRX_DBName}" < $SCHEMA_SQL				|| exit
+		fi
 	fi
 elif [ $onlyproxy -eq 1 ]; then
 	msg "no proxy db specified"

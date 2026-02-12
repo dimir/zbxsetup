@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 additional_usage()
 {
@@ -28,7 +28,6 @@ FILES_PTRN="$O_ZCONFDIR/zabbix_*.conf"
 SERVER_PORT_PRIMARY=10051
 SERVER_PORT_SECONDARY=10052
 AGENT_PORT=10050
-WEB_IP=192.168.6.85
 TESTS_DIR=~/tmp/rsm-tests
 
 if [ $O_PRX -eq 1 ]; then
@@ -43,19 +42,28 @@ for opt; do
 	[ "$opt" = "-v" ] && verb=1 && break
 done
 
-echo "DBUser=$DBUser"
-echo "DBPassword=$DBPassword"
-echo "DBName=$DBName"
-echo "URLPATH=$O_URLPATH"
+if [ $verb = 1 ]; then
+	echo "URLPATH=$O_URLPATH"
+	echo "WEBADDR=$O_WEBADDR"
+	echo "proxy=$O_PRX"
+	echo "dbtype=$O_DB"
+	if [ $O_PRX -eq 1 ]; then
+		echo "proxy_dbtype=$O_DBPRX"
+	fi
+	for key in DBHost DBName DBUser DBPassword; do
+		value=$(eval echo \$$key)
+		echo "$key=$value"
+	done
+	exit
+fi
 
-for key in DBHost DBName DBUser DBPassword; do
+for key in DBHost DBUser DBPassword DBName; do
 	value=$(eval echo \$$key)
 	dbg "setting $key=$value"
 	for f in $FILES_PTRN; do
 		dbg "  in file $f"
 		sed -i "s/^\(\([#\ ]*\)\?\)$key=.*/\1$key=$value/g" $f
 	done
-	[ $verb = 1 ] && echo "$key=$value"
 done
 
 # this is done by run-tests.sh
@@ -75,7 +83,7 @@ done
 # 	sed -i 's,^db_username=.*,db_username='${DBUser}',g'                              "$CONF"
 # 	sed -i 's,^db_password=.*,db_password='${DBPassword}',g'                          "$CONF"
 
-# 	sed -i -rz 's,\[frontend\]\nurl=,[frontend]\nurl=http://'${WEB_IP}'/'${O_URLPATH}'/ui,' "$CONF"
+# 	sed -i -rz 's,\[frontend\]\nurl=,[frontend]\nurl=http://'${O_WEBADDR}'/'${O_URLPATH}'/ui,' "$CONF"
 # fi
 
 CONF="$O_ZCONFDIR/zabbix_server.conf"
@@ -103,9 +111,9 @@ if [ $O_PRX -eq 1 ]; then
 		done
 
 		# db name in proxy is different
-		sed -i "s/^DBName=.*/DBName=$PRX_DBName/" "$CONF"
-		sed -i "s/^ListenPort=.*/ListenPort=${PROXY_PORT}/" "$CONF"
-		sed -i "s/^ServerPort=.*/ServerPort=${SERVER_PORT}/" "$CONF"
+		sed -i "s,^DBName=.*,DBName=$PRX_DBName," "$CONF"
+		sed -i "s,^ListenPort=.*,ListenPort=${PROXY_PORT}," "$CONF"
+		sed -i "s,^ServerPort=.*,ServerPort=${SERVER_PORT}," "$CONF"
 	fi
 fi
 
@@ -124,26 +132,57 @@ if [ -f "$CONF" ]; then
 fi
 
 # check if zabbix binaries are ready
-zbx_serv_bin="sbin/zabbix_server"
-if [ -f $zbx_serv_bin -a "$(which strings)" ]; then
+zbx_bin="sbin/zabbix_server"
+if [ -f $zbx_bin -a "$(which strings)" ]; then
 	case $O_DB in
 		m)
 			# MySQL
-			if ! strings $zbx_serv_bin | grep -q mysql_init; then
-				msg "$zbx_serv_bin is not compiled with MySQL support"
-				recompile
+			if ! strings $zbx_bin | grep -q mysql_init; then
+				msg "$zbx_bin is not compiled with MySQL support"
+				recompile server
 			fi
 			;;
 		p)
 			# PostgreSQL
-			if ! strings $zbx_serv_bin | grep -q PostgreSQL; then
-				msg "$zbx_serv_bin is not compiled with PostgreSQL support"
-				recompile
+			if ! strings $zbx_bin | grep -q PostgreSQL; then
+				msg "$zbx_bin is not compiled with PostgreSQL support"
+				recompile server
 			fi
 			;;
 		*)
 			;;
 	esac
+fi
+
+if [ $O_PRX -eq 1 ]; then
+	zbx_bin="sbin/zabbix_proxy"
+	if [ -f $zbx_bin -a "$(which strings)" ]; then
+		case $O_DBPRX in
+			m)
+				# MySQL
+				if ! strings $zbx_bin | grep -q mysql_init; then
+					msg "$zbx_bin is not compiled with MySQL support"
+					recompile proxy
+				fi
+				;;
+			p)
+				# PostgreSQL
+				if ! strings $zbx_bin | grep -q PostgreSQL; then
+					msg "$zbx_bin is not compiled with PostgreSQL support"
+					recompile proxy
+				fi
+				;;
+			s)
+				# PostgreSQL
+				if ! strings $zbx_bin | grep -q sqlite3_open; then
+					msg "$zbx_bin is not compiled with SQLite support"
+					recompile proxy
+				fi
+				;;
+			*)
+				;;
+		esac
+	fi
 fi
 
 CONF=ui/conf/zabbix.conf.php
@@ -168,6 +207,7 @@ if [ -f "$CONF" ]; then
 			err "unsupported db type"
 			;;
 	esac
+
 	sed -i "s/\(.*DB\[['\"]TYPE['\"]\].*= ['\"]\)[^'\"]*\(['\"];\)/\1$db_type\2/"		$CONF
 	sed -i "s/\(.*DB\[['\"]SERVER['\"]\].*= ['\"]\)[^'\"]*\(['\"];\)/\1$DBHost\2/"		$CONF
 	sed -i "s/\(.*DB\[['\"]DATABASE['\"]\].*= ['\"]\)[^'\"]*\(['\"];\)/\1$DBName\2/"	$CONF
@@ -183,16 +223,13 @@ if [ -f "$CONF" ]; then
 	sed -i "s/\(.*\$ZBX_SERVER_PORT.*= ['\"]\)[^'\"]*\(['\"];\)/\1${SERVER_PORT}\2/"	$CONF
 
 	if grep -q '$DB\[.*SERVERS.*\]' "$CONF"; then
-		echo setting $DBPassword...
 		sed -i "s/\('NAME'\s*=>\s*\)'.*'/\1'Server 1'/"		$CONF
 		sed -i "s/\('SERVER'\s*=>\s*\)'.*'/\1'$DBHost'/"	$CONF
 		sed -i "s/\('DATABASE'\s*=>\s*\)'.*'/\1'$DBName'/"	$CONF
 		sed -i "s/\('USER'\s*=>\s*\)'.*'/\1'$DBUser'/"		$CONF
 		sed -i "s/\('PASSWORD'\s*=>\s*\)'.*'/\1'$DBPassword'/"	$CONF
 
-		set -x
-		sed -i "s|\('URL'\s*=>\s*\).*|\1'http://${WEB_IP}/${O_URLPATH}/ui/',|"	$CONF
-		set +x
+		sed -i "s|\('URL'\s*=>\s*\).*|\1'http://${O_WEBADDR}/${O_URLPATH}/ui/',|"	$CONF
 	fi
 fi
 
@@ -201,8 +238,8 @@ if [[ ! -f $CONF && -f $CONF.example ]]; then
 	cp -v $CONF.example $CONF
 fi
 if [ -f $CONF ]; then
-	sed -i "s|\(.*FRONTEND_URL=\).*|\1\"http://${WEB_IP}/${O_URLPATH}/ui\"|"       $CONF
-	sed -i "s|\(.*FORWARDER_URL=\).*|\1\"http://${WEB_IP}/${O_URLPATH}/rsm-api\"|" $CONF
+	sed -i "s|\(.*FRONTEND_URL=\).*|\1\"http://${O_WEBADDR}/${O_URLPATH}/ui\"|"       $CONF
+	sed -i "s|\(.*FORWARDER_URL=\).*|\1\"http://${O_WEBADDR}/${O_URLPATH}/rsm-api\"|" $CONF
 fi
 
 
@@ -215,7 +252,7 @@ if [ -f $CONF.example ]; then
 	cp -v $CONF.example $CONF
 
 	sed -i "s|\(.*'database'.*=> \).*|\1'${DBName}',|"                   $CONF
-	sed -i "s|\(.*'url'.*=> \).*|\1'http://${WEB_IP}/${O_URLPATH}/ui',|" $CONF
+	sed -i "s|\(.*'url'.*=> \).*|\1'http://${O_WEBADDR}/${O_URLPATH}/ui',|" $CONF
 	sed -i "s|/var/log/zabbix/alerts|$alerts_dir|"                       $CONF
 fi
 
@@ -225,7 +262,10 @@ while [ -n "$1" ]; do
 		key=${1%=*}
 		val=${1#*=}
 
-		[ $verb = 1 ] && echo "$key=$val"
+		if [ $verb = 1 ]; then
+			echo "$key=$val"
+			continue
+		fi
 
 		for f in $FILES_PTRN; do
 			if grep -q "^$key=" $f; then
@@ -286,12 +326,11 @@ CONF=opt/zabbix/scripts/rsm.conf
 if [ -f $CONF.example ]; then
 	cp $CONF{.example,}
 
-	set_ini $CONF server_1 za_url     http://${WEB_IP}/${O_URLPATH}/ui
-	set -x
-	grep db_name /home/vl/tmp/rsm-tests/src/$CONF
+	set_ini $CONF server_1 za_url     http://${O_WEBADDR}/${O_URLPATH}/ui
+	set_ini $CONF server_1 db_host    $DBHost
+	[ -f /home/vl/tmp/rsm-tests/src/$CONF ] && grep db_host /home/vl/tmp/rsm-tests/src/$CONF
 	set_ini $CONF server_1 db_name    $DBName
-	grep db_name /home/vl/tmp/rsm-tests/src/$CONF
-	set +x
+	[ -f /home/vl/tmp/rsm-tests/src/$CONF ] && grep db_name /home/vl/tmp/rsm-tests/src/$CONF
 	set_ini $CONF server_1 db_user    zabbix
 	set_ini $CONF server_1 dbpassword password
 

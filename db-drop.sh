@@ -11,13 +11,17 @@ onlyproxy=0
 [ "$1" = "-p" ] && onlyproxy=1
 
 if [ $O_PRX -eq 1 ]; then
-    DB="$PRX_DBName"
-    exec_sql $DB "drop database" < <(echo "drop database $DB")
+	if [[ $PRX_DBName =~ ^/ ]]; then
+		rm -fv $PRX_DBName
+	else
+		DB="$PRX_DBName"
+		exec_sql $DB "drop database" < <(echo "drop database if exists $DB")
+	fi
 elif [ $onlyproxy -eq 1 ]; then
-    msg "no proxy db specified"
+	msg "no proxy db specified"
 fi
 
 [ $onlyproxy -eq 1 ] && exit
 
 DB="$DBName"
-exec_sql $DB "drop database" < <(echo "drop database $DB")
+exec_sql $DB "drop database" < <(echo "drop database if exists $DB")

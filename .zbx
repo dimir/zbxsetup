@@ -3,11 +3,13 @@ usage()
     echo "Usage: $0: [-v 18|20] [-t <m|p>] [-n <name>] [-p <1|0>] [-s <server>] [-u <dbuser> ] [-w <dbpass>] [-d <1|0>] [-h] [--] [script options]"
     echo "Options:"
     echo -e "\t-v\t\tversion (18 for 1.8 and 20 for 2.0)"
-    echo -e "\t-t\t\tdatabase type (m for mysql and p for postgresql)"
+    echo -e "\t-t\t\tserver database type (m = mysql, p = postgresql)"
+    echo -e "\t-y\t\tproxy database type (m = mysql, p = postgresql, s = sqlite (proxy only)"
     echo -e "\t-p\t\tenable proxy (1 - yes, 0 - no)"
     echo -e "\t-n <dbname>\tspecify database name"
     echo -e "\t-u <dbuser>\tspecify db user"
     echo -e "\t-w <dbpass>\tspecify db password"
+    echo -e "\t-a <path>\tspecify WEB address"
     echo -e "\t-r <path>\tspecify URL path"
     echo -e "\t-s <server>\tspecify db server host"
     echo -e "\t-c <directory>\tspecify configuration files directory (default: /etc/zabbix)"
@@ -86,14 +88,16 @@ write_default()
 
 recompile()
 {
-    msg "cleaning up"
-    make clean > /dev/null
-    msg "running conf.sh $O_ARGS"
-    conf.sh $O_ARGS >/dev/null || exit
-    msg "running make dbschema"
-    make dbschema >/dev/null || exit
-    msg "running make -j2 install >/dev/null"
-    make -j2 install >/dev/null || exit
+	local target=$1
+
+	msg "running conf.sh $O_ARGS -- -t $target"
+	conf.sh $O_ARGS -- -t $target >/dev/null || exit
+#	msg "cleaning up"
+#	make clean > /dev/null || exit
+	msg "running make dbschema"
+	make dbschema >/dev/null || exit
+	msg "running make -j2 install >/dev/null"
+	make -j2 install >/dev/null || exit
 }
 
 exec_sql()
@@ -109,20 +113,18 @@ exec_sql()
         ADDOPTS=
 	[ "$O_DEBUG" = "1" ] && ADDOPTS="-a"
 	export PGPASSWORD=$O_DBPASS
-	CMD="psql $ADDOPTS -v ON_ERROR_STOP=1 -q -U $O_DBUSER"
+	CMD="psql $ADDOPTS -h $DBHost -v ON_ERROR_STOP=1 -q -U $O_DBUSER"
     elif [ "m" = "$O_DB" ]; then
         ADDOPTS=
 	[ "$O_DEBUG" = "1" ] && ADDOPTS="-v"
-	CMD="mysql $ADDOPTS -u $O_DBUSER -p$O_DBPASS"
-	CMD="mysql $ADDOPTS -u $O_DBUSER -p$O_DBPASS -t"
+	CMD="mysql $ADDOPTS -h $DBHost -u $O_DBUSER -p$O_DBPASS"
+#	CMD="mysql $ADDOPTS -u $O_DBUSER -p$O_DBPASS -t"
     else
 	echo unsupported db type: $O_DB
 	exit
     fi
 
-    CMD="$CMD -h $DBHost"
-
-    msg="[$DB_TYPE:$O_DBUSER@$O_DBHOST"
+    msg="[$O_DB:$O_DBUSER@$O_DBHOST"
     [ -n "$db_name" ] && msg="$msg:$db_name"
     msg="$msg] $cmd"
 
@@ -149,10 +151,17 @@ fix_db_name()
     ZBX_RETVAL=$(echo $1 | tr -- -./ _ | tr [A-Z] [a-z])
 }
 
-REPO=$(basename -s .git `git config --get remote.origin.url`)
+remote_url=$(git config --get remote.origin.url)
+
+if [ -z "$remote_url" ]; then
+	echo "cannot identify git repository, is \"$(pwd)\" a git repo directory?"
+	exit 1
+fi
+
+REPO=$(basename -s .git $remote_url)
 
 if [ -z "$REPO" ]; then
-	echo "cannot identify git repository (are you in the git repo directory?)"
+	echo "cannot identify git repository, is \"$(pwd)\" a git repo directory?"
 	exit 1
 fi
 
@@ -172,7 +181,8 @@ fi
 defaults=(
     O_DEBUG		0		# debug enabled (NB! THIS ENTRY SHOULD BE FIRST)
     O_VER		20		# Zabbix version (2.0)
-    O_DB		m		# DB type (MySQL)
+    O_DB		m		# server DB type (MySQL)
+    O_DBPRX		s		# proxy DB type (SQLite)
     O_DBUSER		zabbix		# DB user
     O_DBPASS		password	# DB password
     O_DBHOST		localhost	# DB host
@@ -181,6 +191,7 @@ defaults=(
     O_PRX		0		# proxy enabled
     O_ZCONFDIR		/etc/zabbix	# configuration files directory
     O_ZLOGDIR		/tmp		# log and pid files directory
+    O_WEBADDR           "127.0.0.1"	# WEB address
     O_URLPATH           ""		# base URL path to zabbix
 )
 
@@ -219,7 +230,18 @@ while [ -n "$1" ]; do
 		    write_default O_DB $1
 		    ;;
 		*)
-		    err "currently supported only m (MySQL) and p (PostgreSQL) DB types"
+		    err "currently supported only m (MySQL) and p (PostgreSQL) server DB types"
+		    ;;
+	    esac
+            ;;
+        -y)
+            shift
+	    case $1 in
+		"p"|"m"|"s")
+		    write_default O_DBPRX $1
+		    ;;
+		*)
+		    err "currently supported only m (MySQL), p (PostgreSQL) and s (SQLite) proxy DB types"
 		    ;;
 	    esac
             ;;
@@ -227,11 +249,13 @@ while [ -n "$1" ]; do
             shift
 	    write_default O_DBNAME $1
             ;;
+        -a)
+            shift
+            write_default O_WEBADDR $1
+            ;;
         -r)
             shift
-            set -x
             write_default O_URLPATH $1
-            set +x
             ;;
         -p)
 	    shift
@@ -305,29 +329,14 @@ write_default O_DBNAME $DBName
 
 PRX_DBName=
 if [ $O_PRX -eq 1 ]; then
-    PRX_DBName=${DBName}_prx
+	if [ $O_DBPRX = "s" ]; then
+		PRX_DBName="/var/lib/sqlite/${DBName}_prx.sqlite3"
+	else
+		PRX_DBName="${DBName}_prx"
+	fi
 fi
 
 write_default O_PRX_DBNAME $PRX_DBName
 
-if [ -z "$O_URLPATH" ]; then
-	if [ -d opt ]; then
-		O_URLPATH="icann/$BRANCH"
-	else
-		O_URLPATH="zabbix/$BRANCH"
-	fi
-
-	write_default O_URLPATH $O_URLPATH
-fi
-
 DBUser=$O_DBUSER
 DBPassword=$O_DBPASS
-DB_TYPE=
-if [ $O_DB = "m" ]; then
-    DB_TYPE=mysql
-elif [ $O_DB = "p" ]; then
-    DB_TYPE=postgresql
-else
-    err "unsupported db type: $O_DB"
-    exit 1
-fi
