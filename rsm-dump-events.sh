@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-declare select_fields="distinct case when e.value=1 then 'PROBLEM' else 'RESOLVED' end as value,e.eventid,h.host,from_unixtime(e.clock) as clock,e.name,i.key_,a.action as ack_action,from_unixtime(a.clock) as ack_clock,e.severity"
-declare order="order by h.host,e.name,e.clock"
+declare select_fields="distinct case when e.value=1 then 'PROBLEM' else 'RESOLVED' end as value,e.eventid,h.host,e.name,from_unixtime(e.clock) as clock,i.key_,a.action as ack_action,from_unixtime(a.clock) as ack_clock,e.severity"
+declare order="order by h.host,e.name,eventid"
 declare clock_field="e.clock"
 declare -a search_columns=(h.host i.key_ e.name)
 

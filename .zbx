@@ -115,9 +115,10 @@ exec_sql()
 	export PGPASSWORD=$O_DBPASS
 	CMD="psql $ADDOPTS -h $DBHost -v ON_ERROR_STOP=1 -q -U $O_DBUSER"
     elif [ "m" = "$O_DB" ]; then
+        export MYSQL_PWD="${O_DBPASS}"
         ADDOPTS=
 	[ "$O_DEBUG" = "1" ] && ADDOPTS="-v"
-	CMD="mysql $ADDOPTS -h $DBHost -u $O_DBUSER -p$O_DBPASS"
+	CMD="mysql $ADDOPTS -h $DBHost -u $O_DBUSER"
 #	CMD="mysql $ADDOPTS -u $O_DBUSER -p$O_DBPASS -t"
     else
 	echo unsupported db type: $O_DB
