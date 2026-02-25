@@ -4,13 +4,15 @@ set -e
 
 DIR="$(dirname "$(readlink -f "$0")")"
 ZBX_DEFAULTS="${DIR}/.zbx-defaults"
+RSM_CONFIG="$(ls /opt/zabbix*/scripts/rsm.conf)"
 
 main()
 {
-    write_default O_DBHOST $(get_ini /opt/zabbix50/scripts/rsm.conf db_host)
-    write_default O_DBUSER $(get_ini /opt/zabbix50/scripts/rsm.conf db_user)
-    write_default O_DBNAME $(get_ini /opt/zabbix50/scripts/rsm.conf db_name)
-    write_default O_DBPASS $(get_ini /opt/zabbix50/scripts/rsm.conf db_password)
+    write_default O_DB "m"
+    write_default O_DBHOST $(get_ini ${RSM_CONFIG} db_host)
+    write_default O_DBUSER $(get_ini ${RSM_CONFIG} db_user)
+    write_default O_DBNAME $(get_ini ${RSM_CONFIG} db_name)
+    write_default O_DBPASS $(get_ini ${RSM_CONFIG} db_password)
 }
 
 get_ini()
