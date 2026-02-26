@@ -25,5 +25,4 @@ declare -a search_columns=(h.host i.key_)
 				and g.groupid in ($TLDS)
 				${ptrn_cond}
 			${order}" -t
-)
-#) 2>&1 | grep -v '^\['
+) 2>&1 | grep -v '^\['
