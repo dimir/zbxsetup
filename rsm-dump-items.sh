@@ -8,10 +8,11 @@ declare -a search_columns=(h.host i.key_)
 (
 	source .rsm-dump
 
-	db-exec.sh "select case when i.status=0 then 'Enabled' when i.status=1 then 'Disabled' end as 'status',h.host,i.key_,i.itemid,case when i.value_type=0 then 'FLOAT' when i.value_type=1 then 'STR' when i.value_type=3 then 'INT' else i.value_type end as type
+	db-exec.sh "select case when i.status=0 then 'Enabled' when i.status=1 then 'Disabled' end as 'status',h.host,substring(i.key_, 1, 40) AS key_,i.itemid,case when i.value_type=0 then 'FLOAT' when i.value_type=1 then 'STR' when i.value_type=3 then 'INT' when i.value_type=4 then 'TEXT' else i.value_type end as type
 			from items i
 			left join hosts h on h.hostid=i.hostid
 			where i.templateid is not null
+				and h.status in (0,1)
 				${ptrn_cond}
 			order by h.host,i.key_" -t
 
@@ -26,7 +27,7 @@ declare -a search_columns=(h.host i.key_)
 					and hg.groupid=g.groupid
 					and h.hostid=i.hostid
 					and i.itemid=s.itemid
-					and g.groupid in (120,130,140,190)
+					and g.groupid in ($TLDS)
 					${cond}
 				${order}" -t
 	done

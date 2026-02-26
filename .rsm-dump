@@ -1,3 +1,9 @@
+	# 120: "Probes", 130: "Probes - Mon", 140: "TLDs", 190: "TLD Probe results"
+	declare -r PROB=120
+	declare -r PMON=130
+	declare -r TLDS=140
+	declare -r PRES=190
+
 	declare -a ptrns
 	declare from
 	declare till

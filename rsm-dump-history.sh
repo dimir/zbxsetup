@@ -5,9 +5,6 @@ declare order="order by h.host,i.key_,s.clock"
 declare clock_field="s.clock"
 declare -a search_columns=(h.host i.key_)
 
-# "Probes - Mon", "TLDs", "TLD Probe results"
-declare groups="130,140,190"
-
 (
 	source .rsm-dump
 
@@ -22,6 +19,6 @@ declare groups="130,140,190"
 					and hg.groupid=g.groupid
 					and h.hostid=i.hostid
 					and i.itemid=s.itemid
-					and g.groupid in (120,130,140,190) ${cond}${order}" -t
+					and g.groupid in ($TLDS,$PMON,$PRES) ${cond}${order}" -t
 	done
 ) 2>&1 | grep -v '^\['
