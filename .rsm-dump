@@ -9,17 +9,16 @@
 	declare till
 	declare time_cond
 	declare ptrn_cond
-	declare strict=0
 
 	while [ -n "$1" ]; do
 		if [[ "$1" = "-h" || "$1" = "--help" ]]; then
 			echo "usage: $0 <options>"
 			echo
 			echo "Options:"
-			echo "<from>                      in format 0000-00-00 00:00:00 (optional)"
-			echo "<till>                      in format 0000-00-00 00:00:00 (optional)"
-			echo "<pattern> [<pattern> ...]   search pattern that will be applied to columns: ${search_columns[@]} (optional)"
-			echo "-s                          strict, use \"target='pattern'\" in WHERE clause rather than \"target like '%pattern%'\" (optional)"
+			echo "<from>                              in format 0000-00-00 00:00:00 (optional)"
+			echo "<till>                              in format 0000-00-00 00:00:00 (optional)"
+			echo "<pattern[:s]> [<pattern[:s]> ...]   search pattern that will be applied to columns: ${search_columns[@]} (optional)"
+			echo "                                    add <pattern:s> to note that provided pattern is complete, e. g. \"tld1:s\""
 
 			exit 1
 		fi
@@ -35,8 +34,6 @@
 				echo "invalid parameter: $1"
 				exit 1
 			fi
-		elif [ "$1" = "-s" ]; then
-			strict=1
 		else
 			ptrns+=("$1")
 		fi
@@ -67,11 +64,18 @@
 					str+=" or "
 				fi
 
-				if [ $strict -eq 1 ]; then
-					str+="$c COLLATE utf8mb3_unicode_ci = '$i'"
+				str+="$c COLLATE utf8mb3_unicode_ci "
+
+				declare ptrn=${i%:s}
+				declare postfix
+
+				if [ $i = $ptrn ]; then
+					postfix="like '%$ptrn%'"
 				else
-					str+="$c COLLATE utf8mb3_unicode_ci like '%$i%'"
+					postfix="= '$ptrn'"
 				fi
+
+				str+="${postfix}"
 			done
 
 			ptrn_cond+="($str)"
