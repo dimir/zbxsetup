@@ -16,8 +16,6 @@ declare -a search_columns=(h.host i.key_)
 
 		[ $i = "history" ] && fields="${fields/cast(s.value as double)/round(s.value, 3)}"
 
-		echo "$i: $fields"
-
 		sql+="select ${fields}
 				from ${i} s,items i,hosts h,hstgrp g,hosts_groups hg
 				where hg.hostid=h.hostid
