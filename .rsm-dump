@@ -71,7 +71,7 @@
 				declare ptrn=${i%:s}
 				declare postfix
 
-				if [ $i = $ptrn ]; then
+				if [ "$i" = "$ptrn" ]; then
 					postfix="like '%$ptrn%'"
 				else
 					postfix="= '$ptrn'"
