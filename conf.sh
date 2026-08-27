@@ -56,7 +56,7 @@ else
 	usage
 fi
 
-opts="--prefix=$(pwd) --with-net-snmp --enable-agent --enable-ipv6 --with-libcurl --with-openssl --with-libpcre2 $addopts $@"
+opts="--prefix=$(pwd) --enable-ipv6 --with-libcurl --with-openssl --with-libpcre2 $addopts $@"
 
 cmd="./configure $opts"
 
